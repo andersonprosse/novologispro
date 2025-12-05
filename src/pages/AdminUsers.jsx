@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Shield, User, CheckSquare, Warehouse, Plus, Trash2 } from 'lucide-react';
+import { User, CheckSquare, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 
 export default function AdminUsersPage() {
@@ -38,19 +38,21 @@ export default function AdminUsersPage() {
     { id: 'AdminUsers', label: 'Administração' }
   ];
 
-  // Fetch AppUsers (custom entity) + System Users
+  // 1. Fetch AppUsers (CORRIGIDO PARA .findMany)
   const { data: appUsers = [] } = useQuery({
     queryKey: ['appUsers'],
-    queryFn: () => base44.entities.AppUser.list(),
+    queryFn: () => base44.entities.AppUser.findMany(),
+  });
+
+  // 2. Fetch Warehouses (CORRIGIDO PARA .findMany)
+  const { data: warehouses = [] } = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: () => base44.entities.Warehouse.findMany(),
   });
 
   // Use AppUsers as the primary source for this view
-  const users = appUsers;
-
-  const { data: warehouses = [] } = useQuery({
-    queryKey: ['warehouses'],
-    queryFn: () => base44.entities.Warehouse.list(),
-  });
+  const users = Array.isArray(appUsers) ? appUsers : [];
+  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
 
   const createUserMutation = useMutation({
     mutationFn: (data) => base44.entities.AppUser.create(data),
@@ -207,7 +209,7 @@ export default function AdminUsersPage() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Nenhum</SelectItem>
-                      {warehouses.map(w => (
+                      {safeWarehouses.map(w => (
                         <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                       ))}
                     </SelectContent>
@@ -256,16 +258,35 @@ export default function AdminUsersPage() {
                   </TableCell>
                   <TableCell>
                     {user.warehouse_id ? 
-                      warehouses.find(w => w.id === user.warehouse_id)?.name || 'N/A' 
+                      safeWarehouses.find(w => w.id === user.warehouse_id)?.name || 'N/A' 
                       : '-'}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button variant="outline" size="sm" onClick={() => openEditDialog(user)}>
-                      Editar Acessos
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" size="sm" onClick={() => openEditDialog(user)}>
+                            <Pencil className="w-4 h-4 mr-2" /> Editar
+                        </Button>
+                        <Button 
+                            variant="ghost" 
+                            size="icon"
+                            className="text-red-600 hover:text-red-800 hover:bg-red-50"
+                            onClick={() => {
+                                if(window.confirm('Tem certeza que deseja excluir este usuário?')) {
+                                    deleteUserMutation.mutate(user.id);
+                                }
+                            }}
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
+              {users.length === 0 && (
+                <TableRow>
+                    <TableCell colSpan={5} className="text-center py-4 text-gray-500">Nenhum usuário encontrado.</TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -300,16 +321,16 @@ export default function AdminUsersPage() {
                 <div className="space-y-2">
                    <Label>Vincular a Galpão</Label>
                    <Select 
-                      value={editingUser.warehouse_id} 
-                      onValueChange={(val) => setEditingUser({...editingUser, warehouse_id: val})}
+                      value={editingUser.warehouse_id || "none"} 
+                      onValueChange={(val) => setEditingUser({...editingUser, warehouse_id: val === "none" ? "" : val})}
                       disabled={editingUser.app_role === 'admin'}
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Selecione..." />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value={null}>Nenhum</SelectItem>
-                        {warehouses.map(w => (
+                        <SelectItem value="none">Nenhum</SelectItem>
+                        {safeWarehouses.map(w => (
                           <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
                         ))}
                       </SelectContent>

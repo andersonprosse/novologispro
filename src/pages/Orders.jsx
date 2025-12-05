@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Package, Search, MapPin, Truck, Trash2, Pencil, X } from 'lucide-react';
+import { Package, Search, Trash2, Pencil, X } from 'lucide-react';
 import { toast } from "sonner";
 
 export default function OrdersPage() {
@@ -25,44 +25,53 @@ export default function OrdersPage() {
     selected_types: ['Geral']
   });
 
-  // Fetch AppUser based on local storage ID
+  const queryClient = useQueryClient();
+
+  // 1. Busca Usuário Logado
   const appUserId = localStorage.getItem('app_user_id');
   const { data: appUser } = useQuery({
     queryKey: ['appUser', appUserId],
     queryFn: async () => {
       if (!appUserId) return null;
-      // CORREÇÃO: Trocado .list() por .findMany()
       const users = await base44.entities.AppUser.findMany();
       return Array.isArray(users) ? users.find(u => u.id === appUserId) : null;
     },
     enabled: !!appUserId
   });
 
-  const queryClient = useQueryClient();
+  const isAdmin = appUser?.app_role === 'admin';
+
+  // 2. Busca Pedidos (Com proteção para array vazio)
+  const { data: orders = [] } = useQuery({
+    queryKey: ['orders'],
+    queryFn: async () => {
+      const data = await base44.entities.Order.findMany();
+      return Array.isArray(data) ? data : [];
+    }
+  });
+
+  // 3. Busca Galpões
+  const { data: warehouses = [] } = useQuery({
+    queryKey: ['warehouses'],
+    queryFn: async () => {
+      const data = await base44.entities.Warehouse.findMany();
+      return Array.isArray(data) ? data : [];
+    }
+  });
+
+  // 4. Busca Tipos de Veículo
+  const { data: vehicleTypes = [] } = useQuery({
+    queryKey: ['vehicleTypes'],
+    queryFn: async () => {
+      const data = await base44.entities.VehicleType.findMany();
+      return Array.isArray(data) ? data : [];
+    }
+  });
 
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  const isAdmin = appUser?.app_role === 'admin';
-
-  // CORREÇÃO: Trocado .list() por .findMany()
-  const { data: orders = [] } = useQuery({
-    queryKey: ['orders'],
-    queryFn: () => base44.entities.Order.findMany(),
-  });
-
-  // CORREÇÃO: Trocado .list() por .findMany()
-  const { data: warehouses = [] } = useQuery({
-    queryKey: ['warehouses'],
-    queryFn: () => base44.entities.Warehouse.findMany(),
-  });
-
-  // CORREÇÃO: Trocado .list() por .findMany()
-  const { data: vehicleTypes = [] } = useQuery({
-    queryKey: ['vehicleTypes'],
-    queryFn: () => base44.entities.VehicleType.findMany(),
-  });
-
+  // MUTAÇÕES
   const createMutation = useMutation({
     mutationFn: (data) => {
       return base44.entities.Order.create({
@@ -123,16 +132,24 @@ export default function OrdersPage() {
     setNewOrder({ ...newOrder, selected_types: updated });
   };
 
-  // Garante que orders é um array antes de filtrar
+  // Garante arrays seguros para evitar erros
   const safeOrders = Array.isArray(orders) ? orders : [];
+  const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
+  const safeVehicleTypes = Array.isArray(vehicleTypes) ? vehicleTypes : [];
 
-  const recentOrders = safeOrders.filter(o => o.app_user_id && o.app_user_id === appUserId);
-  const allOrders = safeOrders.filter(o => o.app_user_id); 
+  // CORREÇÃO AQUI: Mostra TODOS os pedidos na lista geral, não apenas os com dono
+  const allOrders = safeOrders; 
+  
+  // Filtro opcional: Pedidos atribuídos ao usuário logado (para a tabela "Meus Pedidos")
+  const recentOrders = appUserId 
+    ? safeOrders.filter(o => o.app_user_id === appUserId) 
+    : [];
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Create Order Form */}
+        
+        {/* === FORMULÁRIO DE CRIAÇÃO === */}
         <Card className="bg-white dark:bg-slate-800 border-none shadow-lg h-fit">
           <CardHeader className="bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-t-xl text-white">
             <CardTitle className="flex items-center gap-2">
@@ -145,13 +162,13 @@ export default function OrdersPage() {
               <Label>Ponto de Partida (Origem)</Label>
               <Select 
                 value={newOrder.warehouse_id} 
-                onValueChange={val => setNewOrder({...newOrder, warehouse_id: val, customer_name: Array.isArray(warehouses) ? (warehouses.find(w => w.id === val)?.name || '') : ''})}
+                onValueChange={val => setNewOrder({...newOrder, warehouse_id: val, customer_name: safeWarehouses.find(w => w.id === val)?.name || ''})}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o galpão de origem" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.isArray(warehouses) && warehouses.map(wh => (
+                  {safeWarehouses.map(wh => (
                     <SelectItem key={wh.id} value={wh.id}>{wh.name}</SelectItem>
                   ))}
                 </SelectContent>
@@ -168,7 +185,7 @@ export default function OrdersPage() {
                   <SelectValue placeholder="Selecione o destino" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Array.isArray(warehouses) && warehouses.filter(wh => wh.address).map(wh => (
+                  {safeWarehouses.filter(wh => wh.address).map(wh => (
                     <SelectItem key={wh.id} value={wh.address}>{wh.name} ({wh.address})</SelectItem>
                   ))}
                   <SelectItem value="Outro Endereço">Outro Endereço (Manual)</SelectItem>
@@ -199,7 +216,7 @@ export default function OrdersPage() {
                   />
                   <label htmlFor="type-geral" className="text-sm font-medium leading-none">Geral (Todos)</label>
                 </div>
-                {Array.isArray(vehicleTypes) && vehicleTypes.map((type) => (
+                {safeVehicleTypes.map((type) => (
                   <div key={type.id} className="flex items-center space-x-2">
                     <Checkbox 
                       id={`type-${type.id}`} 
@@ -222,7 +239,7 @@ export default function OrdersPage() {
           </CardContent>
         </Card>
 
-        {/* Orders List */}
+        {/* === LISTA DE PEDIDOS === */}
         <div className="lg:col-span-2 space-y-4">
           <Card className="border-none shadow-lg bg-white dark:bg-slate-800">
             <CardHeader>
@@ -235,7 +252,8 @@ export default function OrdersPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {/* Recent Orders */}
+              
+              {/* LISTA: Meus Pedidos Recentes */}
               <div className="mb-8">
                 <h3 className="font-bold text-sm text-slate-500 mb-4 uppercase">Meus Pedidos Recentes</h3>
                 <Table>
@@ -250,7 +268,7 @@ export default function OrdersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {recentOrders.slice(0, 5).map((order) => (
+                    {recentOrders.length > 0 ? recentOrders.slice(0, 5).map((order) => (
                       <TableRow key={order.id}>
                         <TableCell className="font-mono text-xs">{order.order_number}</TableCell>
                         <TableCell>
@@ -280,12 +298,18 @@ export default function OrdersPage() {
                           <Button variant="ghost" size="sm">Detalhes</Button>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )) : (
+                        <TableRow>
+                            <TableCell colSpan={6} className="text-center text-gray-400 py-4 text-sm">
+                                Nenhum pedido criado por você ainda.
+                            </TableCell>
+                        </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </div>
 
-              {/* All Orders List */}
+              {/* LISTA: Todos os Pedidos */}
               <div>
                  <h3 className="font-bold text-sm text-slate-500 mb-4 uppercase">Todos os Pedidos (Geral)</h3>
                  <Table>
@@ -297,7 +321,7 @@ export default function OrdersPage() {
                       <TableHead>Status</TableHead>
                       <TableHead>Lote</TableHead>
                       <TableHead>Notificações</TableHead>
-                      {isAdmin && <TableHead className="text-right">Ações</TableHead>}
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -305,7 +329,7 @@ export default function OrdersPage() {
                       <TableRow key={order.id}>
                         <TableCell className="font-mono text-xs">{order.order_number}</TableCell>
                         <TableCell className="text-xs">
-                           {Array.isArray(warehouses) ? (warehouses.find(w => w.id === order.warehouse_id)?.name || 'N/A') : 'N/A'}
+                           {safeWarehouses.find(w => w.id === order.warehouse_id)?.name || 'N/A'}
                         </TableCell>
                         <TableCell className="text-xs max-w-[200px] truncate" title={order.address}>
                            {order.address}
@@ -323,30 +347,33 @@ export default function OrdersPage() {
                               ))}
                            </div>
                         </TableCell>
-                        {isAdmin && (
-                          <TableCell className="text-right">
+                        <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
-                              <Button 
+                                <Button 
                                 size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                                 onClick={() => { setEditingOrder(order); setIsEditDialogOpen(true); }}
-                              >
+                                >
                                 <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button 
+                                </Button>
+                                <Button 
                                 size="icon" variant="ghost" className="h-8 w-8 text-red-600 hover:text-red-800 hover:bg-red-50"
                                 onClick={() => {
-                                  if(window.confirm('Tem certeza que deseja excluir este pedido?')) {
+                                    if(window.confirm('Tem certeza que deseja excluir este pedido?')) {
                                     deleteMutation.mutate(order.id);
-                                  }
+                                    }
                                 }}
-                              >
+                                >
                                 <Trash2 className="w-4 h-4" />
-                              </Button>
+                                </Button>
                             </div>
-                          </TableCell>
-                        )}
+                        </TableCell>
                       </TableRow>
                     ))}
+                    {allOrders.length === 0 && (
+                        <TableRow>
+                            <TableCell colSpan={7} className="text-center text-gray-500 py-4">Nenhum pedido encontrado no sistema.</TableCell>
+                        </TableRow>
+                    )}
                   </TableBody>
                  </Table>
               </div>
@@ -355,7 +382,7 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* Edit Order Dialog */}
+      {/* === DIALOG DE EDIÇÃO === */}
       {isEditDialogOpen && editingOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-xl shadow-2xl border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200">
@@ -413,7 +440,7 @@ export default function OrdersPage() {
                          />
                          <label htmlFor="edit-type-geral" className="text-sm font-medium">Geral</label>
                       </div>
-                      {Array.isArray(vehicleTypes) && vehicleTypes.map((type) => (
+                      {safeVehicleTypes.map((type) => (
                          <div key={type.id} className="flex items-center space-x-2">
                             <Checkbox 
                               id={`edit-type-${type.id}`} 

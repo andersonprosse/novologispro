@@ -12,6 +12,21 @@ import { Badge } from "@/components/ui/badge";
 import { Package, Search, Trash2, Pencil, X } from 'lucide-react';
 import { toast } from "sonner";
 
+// --- FUNÇÃO DE SEGURANÇA PARA CORRIGIR O ERRO DE .MAP ---
+const safeParseJSON = (data) => {
+  if (Array.isArray(data)) return data; // Já é lista? Retorna.
+  if (typeof data === 'string') {
+    try {
+      // Tenta converter texto "['Item']" em lista real
+      const parsed = JSON.parse(data);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+      return []; // Deu erro? Retorna lista vazia para não quebrar.
+    }
+  }
+  return []; // Nulo ou indefinido? Retorna lista vazia.
+};
+
 export default function OrdersPage() {
   const [newOrder, setNewOrder] = useState({
     customer_name: '',
@@ -39,9 +54,7 @@ export default function OrdersPage() {
     enabled: !!appUserId
   });
 
-  const isAdmin = appUser?.app_role === 'admin';
-
-  // 2. Busca Pedidos (Com proteção para array vazio)
+  // 2. Busca Pedidos
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => {
@@ -59,12 +72,17 @@ export default function OrdersPage() {
     }
   });
 
-  // 4. Busca Tipos de Veículo
+  // 4. Busca Tipos de Veículo (Com proteção contra erro de CORS)
   const { data: vehicleTypes = [] } = useQuery({
     queryKey: ['vehicleTypes'],
     queryFn: async () => {
-      const data = await base44.entities.VehicleType.findMany();
-      return Array.isArray(data) ? data : [];
+      try {
+        const data = await base44.entities.VehicleType.findMany();
+        return Array.isArray(data) ? data : [];
+      } catch (error) {
+        console.warn("Erro ao carregar tipos de veículos (CORS ignorado):", error);
+        return []; // Retorna vazio para não travar a tela
+      }
     }
   });
 
@@ -85,7 +103,8 @@ export default function OrdersPage() {
         order_number: data.order_number,
         app_user_id: appUser?.id,
         app_user_email: appUser?.email,
-        allowed_vehicles: data.selected_types
+        // Garante que salvamos como string JSON para compatibilidade
+        allowed_vehicles: JSON.stringify(data.selected_types)
       });
     },
     onSuccess: () => {
@@ -102,7 +121,16 @@ export default function OrdersPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }) => base44.entities.Order.update(id, data),
+    mutationFn: ({ id, data }) => {
+        // Prepara dados para salvar (converte array de volta para string se necessário)
+        const dataToSave = {
+            ...data,
+            allowed_vehicles: Array.isArray(data.allowed_vehicles) 
+                ? JSON.stringify(data.allowed_vehicles) 
+                : data.allowed_vehicles
+        };
+        return base44.entities.Order.update(id, dataToSave);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries(['orders']);
       setIsEditDialogOpen(false);
@@ -121,26 +149,40 @@ export default function OrdersPage() {
     onError: () => toast.error("Erro ao remover pedido")
   });
 
-  const toggleVehicleType = (type) => {
-    const current = newOrder.selected_types || [];
+  // Função para abrir edição convertendo a string do banco para array
+  const handleEditClick = (order) => {
+      setEditingOrder({
+          ...order,
+          allowed_vehicles: safeParseJSON(order.allowed_vehicles)
+      });
+      setIsEditDialogOpen(true);
+  };
+
+  const toggleVehicleType = (type, isEditing = false) => {
+    const targetState = isEditing ? editingOrder : newOrder;
+    const targetField = isEditing ? 'allowed_vehicles' : 'selected_types';
+    
+    const current = targetState[targetField] || [];
     let updated;
+    
     if (current.includes(type)) {
       updated = current.filter(t => t !== type);
     } else {
       updated = [...current, type];
     }
-    setNewOrder({ ...newOrder, selected_types: updated });
+
+    if (isEditing) {
+        setEditingOrder({ ...editingOrder, allowed_vehicles: updated });
+    } else {
+        setNewOrder({ ...newOrder, selected_types: updated });
+    }
   };
 
-  // Garante arrays seguros para evitar erros
   const safeOrders = Array.isArray(orders) ? orders : [];
   const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
   const safeVehicleTypes = Array.isArray(vehicleTypes) ? vehicleTypes : [];
-
-  // CORREÇÃO AQUI: Mostra TODOS os pedidos na lista geral, não apenas os com dono
-  const allOrders = safeOrders; 
   
-  // Filtro opcional: Pedidos atribuídos ao usuário logado (para a tabela "Meus Pedidos")
+  const allOrders = safeOrders; 
   const recentOrders = appUserId 
     ? safeOrders.filter(o => o.app_user_id === appUserId) 
     : [];
@@ -253,62 +295,6 @@ export default function OrdersPage() {
             </CardHeader>
             <CardContent>
               
-              {/* LISTA: Meus Pedidos Recentes */}
-              <div className="mb-8">
-                <h3 className="font-bold text-sm text-slate-500 mb-4 uppercase">Meus Pedidos Recentes</h3>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>ID</TableHead>
-                      <TableHead>Cliente</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Lote</TableHead>
-                      <TableHead>Notificações</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {recentOrders.length > 0 ? recentOrders.slice(0, 5).map((order) => (
-                      <TableRow key={order.id}>
-                        <TableCell className="font-mono text-xs">{order.order_number}</TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{order.customer_name}</p>
-                            <p className="text-xs text-slate-500">{order.address}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={`
-                            ${order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' : 
-                              order.status === 'in_transit' ? 'bg-blue-100 text-blue-700' : 
-                              order.status === 'delivered' ? 'bg-green-100 text-green-700' : 'bg-gray-100'}
-                          `}>
-                            {order.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{order.batch_number || '-'}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-1">
-                             {(order.allowed_vehicles || []).map(v => (
-                               <Badge key={v} variant="outline" className="text-[10px] border-slate-300 text-slate-600">{v}</Badge>
-                             ))}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">Detalhes</Button>
-                        </TableCell>
-                      </TableRow>
-                    )) : (
-                        <TableRow>
-                            <TableCell colSpan={6} className="text-center text-gray-400 py-4 text-sm">
-                                Nenhum pedido criado por você ainda.
-                            </TableCell>
-                        </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-
               {/* LISTA: Todos os Pedidos */}
               <div>
                  <h3 className="font-bold text-sm text-slate-500 mb-4 uppercase">Todos os Pedidos (Geral)</h3>
@@ -341,8 +327,9 @@ export default function OrdersPage() {
                         </TableCell>
                         <TableCell className="text-xs">{order.batch_number || '-'}</TableCell>
                         <TableCell>
+                           {/* AQUI ESTAVA O ERRO: Usamos safeParseJSON antes do map */}
                            <div className="flex flex-wrap gap-1">
-                              {(order.allowed_vehicles || []).map(v => (
+                              {safeParseJSON(order.allowed_vehicles).map(v => (
                                 <Badge key={v} variant="outline" className="text-[10px] border-slate-300 text-slate-600">{v}</Badge>
                               ))}
                            </div>
@@ -351,7 +338,7 @@ export default function OrdersPage() {
                             <div className="flex justify-end gap-2">
                                 <Button 
                                 size="icon" variant="ghost" className="h-8 w-8 text-blue-600 hover:text-blue-800 hover:bg-blue-50"
-                                onClick={() => { setEditingOrder(order); setIsEditDialogOpen(true); }}
+                                onClick={() => handleEditClick(order)}
                                 >
                                 <Pencil className="w-4 h-4" />
                                 </Button>
@@ -432,11 +419,7 @@ export default function OrdersPage() {
                          <Checkbox 
                            id="edit-type-geral" 
                            checked={(editingOrder.allowed_vehicles || []).includes('Geral')}
-                           onCheckedChange={(checked) => {
-                             const current = editingOrder.allowed_vehicles || [];
-                             const updated = checked ? [...current, 'Geral'] : current.filter(t => t !== 'Geral');
-                             setEditingOrder({...editingOrder, allowed_vehicles: updated});
-                           }}
+                           onCheckedChange={() => toggleVehicleType('Geral', true)}
                          />
                          <label htmlFor="edit-type-geral" className="text-sm font-medium">Geral</label>
                       </div>
@@ -445,11 +428,7 @@ export default function OrdersPage() {
                             <Checkbox 
                               id={`edit-type-${type.id}`} 
                               checked={(editingOrder.allowed_vehicles || []).includes(type.name)}
-                              onCheckedChange={(checked) => {
-                                const current = editingOrder.allowed_vehicles || [];
-                                const updated = checked ? [...current, type.name] : current.filter(t => t !== type.name);
-                                setEditingOrder({...editingOrder, allowed_vehicles: updated});
-                              }}
+                              onCheckedChange={() => toggleVehicleType(type.name, true)}
                             />
                             <label htmlFor={`edit-type-${type.id}`} className="text-sm font-medium">{type.name}</label>
                          </div>

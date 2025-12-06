@@ -1,5 +1,3 @@
-// Substitua o seu Layout.jsx com o código completo abaixo:
-
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -20,27 +18,34 @@ import { base44 } from '@/api/base44Client';
 
 export default function Layout({ children, currentPageName }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  // Define a sidebar aberta em telas grandes por padrão
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024); 
   const location = useLocation();
 
   // 1. ESTADO DE USUÁRIO - Simplificado para carregar do Local Storage
   const [userData, setUserData] = useState(null);
   
-  // --- FUNÇÃO DE LOGOUT CORRIGIDA ---
-  const handleLogout = () => {
-    // 1. Limpa o localStorage do cliente
-    localStorage.removeItem('app_user_id');
-    localStorage.removeItem('demo_role');
-    localStorage.removeItem('demo_username');
-    localStorage.removeItem('user_permissions');
-    localStorage.removeItem('app_user_email');
-    
-    // 2. Chama a função de logout do servidor (se houver sessão lá)
-    base44.auth.logout(); 
-
-    // 3. Redireciona para a página de login
-    window.location.href = createPageUrl('Home'); 
-  };
+  // --- FUNÇÃO DE LOGOUT CORRIGIDA (Com try...catch) ---
+  const handleLogout = () => {
+    // Tenta chamar o logout do servidor, mas usa try/catch para garantir que
+    // o código não quebre, mesmo que a função base44.auth.logout() não exista.
+    try {
+        base44.auth.logout(); 
+    } catch(e) {
+        console.warn("Falha ao chamar base44.auth.logout(). Limpeza local garantida.", e);
+    }
+    
+    // 1. Limpa o localStorage do cliente (o mais importante para o frontend)
+    localStorage.removeItem('app_user_id');
+    localStorage.removeItem('demo_role');
+    localStorage.removeItem('demo_username');
+    localStorage.removeItem('user_permissions');
+    localStorage.removeItem('app_user_email');
+    
+    // 2. Redireciona para a página de login
+    // Redirecionar para a raiz ('/') permite que o roteador leve para /Home
+    window.location.href = '/'; 
+  };
   
   // Initialize theme and handle resize
   useEffect(() => {
@@ -50,13 +55,13 @@ export default function Layout({ children, currentPageName }) {
       document.documentElement.classList.add('dark');
     }
 
-    const handleResize = () => {
-        setIsSidebarOpen(window.innerWidth > 1024);
-    };
+    const handleResize = () => {
+        setIsSidebarOpen(window.innerWidth > 1024);
+    };
 
-    window.addEventListener('resize', handleResize);
+    window.addEventListener('resize', handleResize);
 
-    return () => window.removeEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const toggleTheme = () => {
@@ -182,7 +187,7 @@ export default function Layout({ children, currentPageName }) {
                 </div>
              </div>
             <button 
-              onClick={handleLogout} // AGORA CHAMA A FUNÇÃO LOCAL
+              onClick={handleLogout} 
               className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />

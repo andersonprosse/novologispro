@@ -25,7 +25,65 @@ export default function HomePage() {
         // Destruturação correta
         const { email, password } = credentials; 
 
-        // 1. Lógica Demo (Admin Hardcoded) - Mantida para facilitar testes
+        // ============================================================
+        // 1. Lógica SEGURA (Backend Auth via login.php) - PRIORIDADE
+        // ============================================================
+        try {
+            // Chama a nova função base44.auth.login com o 'email' e 'password' corretos
+            const user = await base44.auth.login(email, password);
+
+            if (user) {
+                // Login BEM-SUCEDIDO! Salva as credenciais do usuário REAL.
+                localStorage.setItem('demo_role', user.app_role);
+                localStorage.setItem('demo_username', user.full_name);
+                localStorage.setItem('app_user_id', user.id);
+                
+                // --- BLOCO DE PARSING ROBUSTO DE PERMISSÕES ---
+                let permissions = [];
+                try {
+                    const rawPages = user.allowed_pages;
+                    if (rawPages && typeof rawPages === 'string') {
+                        // 1. Remove aspas duplas escapadas (\" para ")
+                        let cleanedString = rawPages.replace(/\\"/g, '"');
+                        
+                        // 2. Remove aspas externas se existirem
+                        if (cleanedString.startsWith('"') && cleanedString.endsWith('"')) {
+                            cleanedString = cleanedString.substring(1, cleanedString.length - 1);
+                        }
+                        
+                        const parsed = JSON.parse(cleanedString); 
+                        if (Array.isArray(parsed)) {
+                            permissions = parsed;
+                        }
+                    }
+                } catch(e) { 
+                    console.error("Erro ao parsear allowed_pages. Aplicando padrão:", e);
+                    permissions = []; 
+                }
+
+                // Fallback de permissões baseado na role
+                if (!permissions || permissions.length === 0) {
+                    permissions = user.app_role === 'admin' 
+                       ? ['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']
+                       : ['Dashboard', 'Orders']; // Padrão seguro para outros
+                }
+                
+                localStorage.setItem('user_permissions', JSON.stringify(permissions));
+                // --- FIM DO BLOCO DE PARSING ROBUSTO ---
+
+                toast.success(`Bem-vindo, ${user.full_name}!`);
+                navigate('/Dashboard');
+                return; // ⬅️ CHAVE: SAIA DA FUNÇÃO APÓS LOGIN REAL!
+            }
+        } catch (authError) {
+            // Apenas ignora o erro de autenticação segura, permitindo tentar o Demo
+            console.error("Falha na autenticação segura. Tentando modo Demo.");
+        }
+
+        // ============================================================
+        // 2. Lógica Demo (Admin Hardcoded) - ÚLTIMA OPÇÃO
+        // ============================================================
+        // Esta lógica SÓ será executada se a autenticação real falhar.
         if (password === '1234' && (email === 'admin' || email.includes('admin'))) {
             localStorage.setItem('demo_role', 'admin');
             localStorage.setItem('demo_username', 'Admin Demo');
@@ -37,54 +95,13 @@ export default function HomePage() {
             return;
         }
 
-        // 2. Lógica SEGURA (Backend Auth via login.php)
-        const user = await base44.auth.login(email, password);
+        // Se falhou em tudo:
+        toast.error("Usuário ou senha incorretos.");
+        setIsLoading(false);
 
-        if (user) {
-            localStorage.setItem('demo_role', user.app_role);
-            localStorage.setItem('demo_username', user.full_name);
-            localStorage.setItem('app_user_id', user.id);
-          
-            // --- CORREÇÃO DO CONTROLE DE ACESSO AQUI ---
-            let permissions = [];
-            try {
-                const rawPages = user.allowed_pages;
-                if (rawPages && typeof rawPages === 'string') {
-                    // 1. Remove aspas duplas escapadas (\" para ")
-                    let cleanedString = rawPages.replace(/\\"/g, '"');
-                    
-                    // 2. Remove aspas externas se existirem (ex: "['Dashboard']" -> ['Dashboard'])
-                    if (cleanedString.startsWith('"') && cleanedString.endsWith('"')) {
-                        cleanedString = cleanedString.substring(1, cleanedString.length - 1);
-                    }
-                    
-                    const parsed = JSON.parse(cleanedString); 
-
-                    if (Array.isArray(parsed)) {
-                        permissions = parsed;
-                    }
-                }
-            } catch(e) { 
-                console.error("Erro ao parsear allowed_pages. Aplicando padrão:", e);
-                permissions = []; 
-            }
-
-            // Se o array de permissões ainda estiver vazio, aplica o fallback
-            if (!permissions || permissions.length === 0) {
-                permissions = user.app_role === 'admin' 
-                   ? ['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']
-                   : ['Dashboard', 'Orders']; // Padrão seguro para outros
-            }
-          
-            localStorage.setItem('user_permissions', JSON.stringify(permissions));
-            // --- FIM DA CORREÇÃO ---
-
-            toast.success(`Bem-vindo, ${user.full_name}!`);
-            navigate('/Dashboard');
-        }
 
       } catch (error) {
-        console.error("Login error:", error);
+        console.error("Erro geral no processo de login:", error);
         toast.error(error.message || "Erro ao realizar login");
         setIsLoading(false);
       }

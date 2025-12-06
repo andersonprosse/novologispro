@@ -1,10 +1,10 @@
 import React from 'react';
 import { base44 } from '@/api/base44Client';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Package, Warehouse, Clock, Activity, CheckCircle2, TrendingUp, MoreHorizontal, Box } from 'lucide-react';
+import { Truck, Package, Warehouse, TrendingUp, CheckCircle2, MoreHorizontal, Box } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
+import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts';
 
 const CustomStatCard = ({ title, value, subtext, icon: Icon, color = "emerald" }) => (
   <Card className="border-none shadow-sm bg-white">
@@ -24,27 +24,47 @@ const CustomStatCard = ({ title, value, subtext, icon: Icon, color = "emerald" }
 );
 
 export default function DashboardPage() {
-  const { data: vehicles = [] } = useQuery({ queryKey: ['vehicles'], queryFn: () => base44.entities.Vehicle.list() });
-  const { data: orders = [] } = useQuery({ queryKey: ['orders'], queryFn: () => base44.entities.Order.list() });
-  const { data: warehouses = [] } = useQuery({ queryKey: ['warehouses'], queryFn: () => base44.entities.Warehouse.list() });
+  // --- CORREÇÃO: Usando .findMany() e garantindo Array ---
+  const { data: vehicles = [] } = useQuery({ 
+      queryKey: ['vehicles'], 
+      queryFn: async () => {
+          const res = await base44.entities.Vehicle.findMany();
+          return Array.isArray(res) ? res : [];
+      }
+  });
 
-  // Data Calculations
-  const activeOrders = orders.filter(o => o.status === 'in_transit').length;
-  const completedOrders = orders.filter(o => o.status === 'delivered').length;
-  const avgProgress = "84%";
-  const totalMaterials = warehouses.reduce((acc, w) => acc + (w.capacity || 0), 0);
+  const { data: orders = [] } = useQuery({ 
+      queryKey: ['orders'], 
+      queryFn: async () => {
+          const res = await base44.entities.Order.findMany();
+          return Array.isArray(res) ? res : [];
+      }
+  });
 
+  const { data: warehouses = [] } = useQuery({ 
+      queryKey: ['warehouses'], 
+      queryFn: async () => {
+          const res = await base44.entities.Warehouse.findMany();
+          return Array.isArray(res) ? res : [];
+      }
+  });
+
+  // Cálculos Seguros (Proteção contra undefined)
+  const activeOrders = Array.isArray(orders) ? orders.filter(o => o.status === 'in_transit').length : 0;
+  const completedOrders = Array.isArray(orders) ? orders.filter(o => o.status === 'delivered').length : 0;
+  
+  // Gráficos (Dados Mockados para visualização)
   const barData = [
-    { name: 'Jan', value: 40 }, { name: 'Feb', value: 30 }, { name: 'Mar', value: 20 },
-    { name: 'Apr', value: 35 }, { name: 'May', value: 25 }, { name: 'Jun', value: 38 },
+    { name: 'Jan', value: 40 }, { name: 'Fev', value: 30 }, { name: 'Mar', value: 20 },
+    { name: 'Abr', value: 35 }, { name: 'Mai', value: 25 }, { name: 'Jun', value: 38 },
   ];
   const pieData = [
     { name: 'Planejamento', value: 6, color: '#3b82f6' },
     { name: 'Concluído', value: 1, color: '#10b981' },
   ];
   const lineData = [
-    { name: 'Jan', value: 10 }, { name: 'Feb', value: 25 }, { name: 'Mar', value: 35 },
-    { name: 'Apr', value: 50 }, { name: 'May', value: 65 }, { name: 'Jun', value: 78 },
+    { name: 'Jan', value: 10 }, { name: 'Fev', value: 25 }, { name: 'Mar', value: 35 },
+    { name: 'Abr', value: 50 }, { name: 'Mai', value: 65 }, { name: 'Jun', value: 78 },
   ];
 
   return (
@@ -94,11 +114,10 @@ export default function DashboardPage() {
               <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-2xl flex items-center justify-center mb-4 border border-white/30">
                 <Box className="w-8 h-8 text-white" />
               </div>
-              <h2 className="text-3xl font-bold mb-2">Logispro Sistema de Logistica</h2>
+              <h2 className="text-3xl font-bold mb-2">Logispro Sistema de Logística</h2>
               <p className="text-slate-200 max-w-md mb-6 text-sm">Visualize e gerencie sua obra e estoque em tempo real com nossa tecnologia de ponta.</p>
               <div className="flex gap-3">
                 <Button variant="secondary" className="bg-white text-slate-900 hover:bg-slate-100">Ver Projetos</Button>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white border-none">Abrir Monitor 3D</Button>
               </div>
            </CardContent>
         </Card>
@@ -130,23 +149,11 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-                     <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${item.progress}%` }}></div>
+                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${item.progress}%` }}></div>
                   </div>
                 </div>
               ))}
             </div>
-             <div className="mt-6 pt-4 border-t border-gray-100">
-                <div className="flex justify-between items-end">
-                   <div>
-                      <p className="text-xs text-gray-400">Progresso médio</p>
-                      <div className="h-1 w-24 bg-gray-100 rounded-full mt-1 overflow-hidden">
-                         <div className="h-full bg-slate-800 w-[14%]"></div>
-                      </div>
-                   </div>
-                   <span className="text-lg font-bold text-gray-900">14%</span>
-                </div>
-                <p className="text-[10px] text-gray-400 mt-1">Total de 7 projetos ativos</p>
-             </div>
           </CardContent>
         </Card>
       </div>

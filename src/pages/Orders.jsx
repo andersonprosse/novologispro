@@ -12,19 +12,18 @@ import { Badge } from "@/components/ui/badge";
 import { Package, Search, Trash2, Pencil, X } from 'lucide-react';
 import { toast } from "sonner";
 
-// --- FUNÇÃO DE SEGURANÇA PARA CORRIGIR O ERRO DE .MAP ---
+// Função de segurança para evitar erros com JSON
 const safeParseJSON = (data) => {
-  if (Array.isArray(data)) return data; // Já é lista? Retorna.
+  if (Array.isArray(data)) return data; 
   if (typeof data === 'string') {
     try {
-      // Tenta converter texto "['Item']" em lista real
       const parsed = JSON.parse(data);
       return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      return []; // Deu erro? Retorna lista vazia para não quebrar.
+      return []; 
     }
   }
-  return []; // Nulo ou indefinido? Retorna lista vazia.
+  return []; 
 };
 
 export default function OrdersPage() {
@@ -42,19 +41,10 @@ export default function OrdersPage() {
 
   const queryClient = useQueryClient();
 
-  // 1. Busca Usuário Logado
+  // ID do usuário logado (Fundamental para a lista de recentes)
   const appUserId = localStorage.getItem('app_user_id');
-  const { data: appUser } = useQuery({
-    queryKey: ['appUser', appUserId],
-    queryFn: async () => {
-      if (!appUserId) return null;
-      const users = await base44.entities.AppUser.findMany();
-      return Array.isArray(users) ? users.find(u => u.id === appUserId) : null;
-    },
-    enabled: !!appUserId
-  });
 
-  // 2. Busca Pedidos
+  // Busca todos os pedidos
   const { data: orders = [] } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => {
@@ -63,7 +53,7 @@ export default function OrdersPage() {
     }
   });
 
-  // 3. Busca Galpões
+  // Busca Galpões
   const { data: warehouses = [] } = useQuery({
     queryKey: ['warehouses'],
     queryFn: async () => {
@@ -72,7 +62,7 @@ export default function OrdersPage() {
     }
   });
 
-  // 4. Busca Tipos de Veículo (Com proteção contra erro de CORS)
+  // Busca Tipos de Veículo
   const { data: vehicleTypes = [] } = useQuery({
     queryKey: ['vehicleTypes'],
     queryFn: async () => {
@@ -80,8 +70,7 @@ export default function OrdersPage() {
         const data = await base44.entities.VehicleType.findMany();
         return Array.isArray(data) ? data : [];
       } catch (error) {
-        console.warn("Erro ao carregar tipos de veículos (CORS ignorado):", error);
-        return []; // Retorna vazio para não travar a tela
+        return [];
       }
     }
   });
@@ -89,7 +78,7 @@ export default function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // MUTAÇÕES
+  // --- CRIAÇÃO (CORRIGIDA) ---
   const createMutation = useMutation({
     mutationFn: (data) => {
       return base44.entities.Order.create({
@@ -101,9 +90,12 @@ export default function OrdersPage() {
         lat: data.lat,
         lng: data.lng,
         order_number: data.order_number,
-        app_user_id: appUser?.id,
-        app_user_email: appUser?.email,
-        // Garante que salvamos como string JSON para compatibilidade
+        
+        // !!! AQUI ESTAVA O PROBLEMA !!!
+        // Mudamos para pegar direto do localStorage, garantindo que o ID sempre vá para o banco
+        app_user_id: localStorage.getItem('app_user_id'),
+        app_user_email: localStorage.getItem('app_user_email'),
+        
         allowed_vehicles: JSON.stringify(data.selected_types)
       });
     },
@@ -122,7 +114,6 @@ export default function OrdersPage() {
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => {
-        // Prepara dados para salvar (converte array de volta para string se necessário)
         const dataToSave = {
             ...data,
             allowed_vehicles: Array.isArray(data.allowed_vehicles) 
@@ -149,7 +140,6 @@ export default function OrdersPage() {
     onError: () => toast.error("Erro ao remover pedido")
   });
 
-  // Função para abrir edição convertendo a string do banco para array
   const handleEditClick = (order) => {
       setEditingOrder({
           ...order,
@@ -183,6 +173,8 @@ export default function OrdersPage() {
   const safeVehicleTypes = Array.isArray(vehicleTypes) ? vehicleTypes : [];
   
   const allOrders = safeOrders; 
+  
+  // FILTRO DE PEDIDOS RECENTES (Do usuário logado)
   const recentOrders = appUserId 
     ? safeOrders.filter(o => o.app_user_id === appUserId) 
     : [];
@@ -191,7 +183,7 @@ export default function OrdersPage() {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* === FORMULÁRIO DE CRIAÇÃO === */}
+        {/* === FORMULÁRIO === */}
         <Card className="bg-white dark:bg-slate-800 border-none shadow-lg h-fit">
           <CardHeader className="bg-gradient-to-r from-emerald-600 to-emerald-500 rounded-t-xl text-white">
             <CardTitle className="flex items-center gap-2">
@@ -282,11 +274,54 @@ export default function OrdersPage() {
         </Card>
 
         {/* === LISTA DE PEDIDOS === */}
-        <div className="lg:col-span-2 space-y-4">
+        <div className="lg:col-span-2 space-y-6">
+          
+          {/* TABELA 1: MEUS PEDIDOS RECENTES */}
+          <Card className="border-none shadow-lg bg-white dark:bg-slate-800">
+            <CardHeader className="border-b border-gray-100 pb-4">
+              <CardTitle className="text-emerald-700">Meus Pedidos Recentes</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+               {recentOrders.length === 0 ? (
+                  <p className="text-gray-500 text-sm">Você ainda não criou nenhum pedido.</p>
+               ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>ID</TableHead>
+                        <TableHead>Destino</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {recentOrders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-mono text-xs">{order.order_number}</TableCell>
+                          <TableCell className="text-xs max-w-[150px] truncate">{order.address}</TableCell>
+                          <TableCell>
+                            <Badge variant={order.status === 'pending' ? 'secondary' : 'default'} className="text-[10px]">
+                              {order.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                             <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => handleEditClick(order)}>
+                                <Pencil className="w-3 h-3" />
+                             </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+               )}
+            </CardContent>
+          </Card>
+
+          {/* TABELA 2: TODOS OS PEDIDOS */}
           <Card className="border-none shadow-lg bg-white dark:bg-slate-800">
             <CardHeader>
               <div className="flex justify-between items-center">
-                <CardTitle>Pedidos Recentes</CardTitle>
+                <CardTitle>Todos os Pedidos (Geral)</CardTitle>
                 <div className="relative w-64">
                   <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
                   <Input placeholder="Buscar pedido..." className="pl-8" />
@@ -294,11 +329,7 @@ export default function OrdersPage() {
               </div>
             </CardHeader>
             <CardContent>
-              
-              {/* LISTA: Todos os Pedidos */}
-              <div>
-                 <h3 className="font-bold text-sm text-slate-500 mb-4 uppercase">Todos os Pedidos (Geral)</h3>
-                 <Table>
+              <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>ID</TableHead>
@@ -327,11 +358,10 @@ export default function OrdersPage() {
                         </TableCell>
                         <TableCell className="text-xs">{order.batch_number || '-'}</TableCell>
                         <TableCell>
-                           {/* AQUI ESTAVA O ERRO: Usamos safeParseJSON antes do map */}
                            <div className="flex flex-wrap gap-1">
-                              {safeParseJSON(order.allowed_vehicles).map(v => (
-                                <Badge key={v} variant="outline" className="text-[10px] border-slate-300 text-slate-600">{v}</Badge>
-                              ))}
+                             {safeParseJSON(order.allowed_vehicles).map(v => (
+                               <Badge key={v} variant="outline" className="text-[10px] border-slate-300 text-slate-600">{v}</Badge>
+                             ))}
                            </div>
                         </TableCell>
                         <TableCell className="text-right">
@@ -363,7 +393,6 @@ export default function OrdersPage() {
                     )}
                   </TableBody>
                  </Table>
-              </div>
             </CardContent>
           </Card>
         </div>

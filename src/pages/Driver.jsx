@@ -34,13 +34,13 @@ export default function DriverPage() {
   const [eta, setEta] = useState("15 min");
   const [distance, setDistance] = useState("5.2 km");
   
-  // 1. Busca Usuário Logado (CORRIGIDO: .findMany)
+  // 1. Busca Usuário Logado
   const { data: user } = useQuery({
     queryKey: ['currentUser'],
     queryFn: async () => {
       const storedId = localStorage.getItem('app_user_id');
       if (storedId) {
-          const users = await base44.entities.AppUser.findMany(); // Era .list()
+          const users = await base44.entities.AppUser.findMany();
           const found = Array.isArray(users) ? users.find(u => u.id === storedId) : null;
           if (found) return found;
       }
@@ -48,20 +48,20 @@ export default function DriverPage() {
     },
   });
 
-  // 2. Busca Veículos (CORRIGIDO: .findMany)
+  // 2. Busca Veículos
   const { data: vehicles = [] } = useQuery({
     queryKey: ['vehicles'],
     queryFn: async () => {
-       const data = await base44.entities.Vehicle.findMany(); // Era .list()
+       const data = await base44.entities.Vehicle.findMany();
        return Array.isArray(data) ? data : [];
     }
   });
 
-  // 3. Busca Pedidos (CORRIGIDO: .findMany)
+  // 3. Busca Pedidos
   const { data: allOrders = [] } = useQuery({
     queryKey: ['allOrders'],
     queryFn: async () => {
-       const data = await base44.entities.Order.findMany(); // Era .list()
+       const data = await base44.entities.Order.findMany();
        return Array.isArray(data) ? data : [];
     }
   });
@@ -70,32 +70,47 @@ export default function DriverPage() {
   const myVehicle = Array.isArray(vehicles) ? vehicles.find(v => v.driver_name === user?.full_name) : null;
   const myVehicleType = myVehicle?.vehicle_type;
 
+  // =========================================================================
+  // CORREÇÃO CRÍTICA AQUI: Convertemos allowed_vehicles de String para Array
+  // =========================================================================
+  
   // 5. Lógica de Filtro: Pedidos Disponíveis para MIM
-  const availableOrders = Array.isArray(allOrders) ? allOrders.filter(order => {
-      // Só quero pedidos pendentes
-      if (order.status !== 'pending') return false;
-      
-      // Lê quais veículos são permitidos nesse pedido
-      const allowed = safeParseJSON(order.allowed_vehicles);
-      
-      // Se for "Geral", qualquer um vê.
-      if (allowed.includes('Geral')) return true;
+  const availableOrders = Array.isArray(allOrders) ? allOrders
+    .filter(order => {
+        // Só quero pedidos pendentes
+        if (order.status !== 'pending') return false;
+        
+        // Lê quais veículos são permitidos (parsing temporário para checagem)
+        const allowed = safeParseJSON(order.allowed_vehicles);
+        
+        // Se for "Geral", qualquer um vê.
+        if (allowed.includes('Geral')) return true;
 
-      // Se eu tenho veículo, verifico se meu tipo está na lista
-      if (myVehicleType && allowed.includes(myVehicleType)) return true;
+        // Se eu tenho veículo, verifico se meu tipo está na lista
+        if (myVehicleType && allowed.includes(myVehicleType)) return true;
 
-      return false;
-  }) : [];
+        return false;
+    })
+    .map(order => ({
+        ...order,
+        // !!! AQUI ESTÁ A CORREÇÃO DO CRASH !!!
+        // Convertemos a String JSON em Array real antes de passar para o componente DailyOrders
+        allowed_vehicles: safeParseJSON(order.allowed_vehicles)
+    })) 
+    : [];
 
   // 6. Meus Pedidos Ativos (Em andamento)
-  const myOrders = Array.isArray(allOrders) ? allOrders.filter(o => {
-    // Pedidos que JÁ aceitei (assigned) ou estou levando (in_transit)
-    // Filtramos pelo veículo ID se disponível, ou assumimos que o motorista sabe quais são os dele
-    // Como não temos driver_id no pedido, usamos vehicle_id se tiver, ou apenas status se for simulação
-    const isMine = myVehicle?.id && o.vehicle_id === myVehicle.id;
-    // Fallback: se não tiver vehicle_id gravado, mostra se tiver status 'in_transit' (simplificação para demo)
-    return (o.status === 'assigned' || o.status === 'in_transit') && (isMine || !o.vehicle_id);
-  }) : [];
+  const myOrders = Array.isArray(allOrders) ? allOrders
+    .filter(o => {
+        const isMine = myVehicle?.id && o.vehicle_id === myVehicle.id;
+        return (o.status === 'assigned' || o.status === 'in_transit') && (isMine || !o.vehicle_id);
+    })
+    .map(order => ({
+        ...order,
+        // Mesma correção aqui para evitar erros no drawer lateral
+        allowed_vehicles: safeParseJSON(order.allowed_vehicles)
+    }))
+    : [];
 
   // Pedido Principal Ativo (Waze Mode)
   const activeOrder = myOrders.find(o => o.status === 'in_transit') || myOrders.find(o => o.status === 'assigned') || {
@@ -182,7 +197,6 @@ export default function DriverPage() {
           className={`${activeTab === 'orders' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-300'} shadow-lg border border-slate-700`}
           onClick={() => setActiveTab('orders')}
         >
-          {/* Badge de contagem */}
           <List className="w-4 h-4 mr-2" /> Pedidos ({availableOrders.length})
         </Button>
       </div>
@@ -199,7 +213,6 @@ export default function DriverPage() {
                   </p>
                 </div>
               </div>
-              {/* Passamos availableOrders em vez de allOrders */}
               <DailyOrders 
                 orders={availableOrders} 
                 myVehicleType={myVehicleType}

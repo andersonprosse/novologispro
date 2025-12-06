@@ -12,12 +12,21 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { User, CheckSquare, Plus, Pencil, Trash2 } from 'lucide-react';
 import { toast } from "sonner";
 
-// Função de segurança para garantir que o que vem do banco seja um Array, mesmo que seja string JSON
+// Função de segurança para garantir que o que vem do banco seja um Array.
+// Lógica robusta para lidar com strings JSON escapadas ou mal formatadas.
 const safeParsePages = (pages) => {
     try {
         if (Array.isArray(pages)) return pages;
         if (typeof pages === 'string') {
-            const parsed = JSON.parse(pages);
+            // 1. Remove aspas duplas escapadas (\" para ")
+            let cleanedString = pages.replace(/\\"/g, '"');
+            
+            // 2. Remove aspas externas se existirem (ex: "['Dashboard']")
+            if (cleanedString.startsWith('"') && cleanedString.endsWith('"')) {
+               cleanedString = cleanedString.substring(1, cleanedString.length - 1);
+            }
+            
+            const parsed = JSON.parse(cleanedString);
             return Array.isArray(parsed) ? parsed : [];
         }
         return [];
@@ -67,7 +76,7 @@ export default function AdminUsersPage() {
     const users = Array.isArray(appUsers) ? appUsers : [];
     const safeWarehouses = Array.isArray(warehouses) ? warehouses : [];
 
-    // MUTAÇÕES
+    // MUTAÇÕES (O Front-end está correto para chamar o DELETE do Back-end)
     const createUserMutation = useMutation({
         mutationFn: (data) => base44.entities.AppUser.create(data),
         onSuccess: () => {
@@ -103,6 +112,7 @@ export default function AdminUsersPage() {
         if (!editingUser) return;
         
         // CORREÇÃO: Converte o array allowed_pages para STRING JSON antes de salvar
+        // Isso garante que o MySQL salve o dado limpo e consistente
         const pagesJson = JSON.stringify(editingUser.allowed_pages || []);
 
         updateUserMutation.mutate({
@@ -146,7 +156,7 @@ export default function AdminUsersPage() {
         setEditingUser({
             ...user,
             app_role: user.app_role || 'driver',
-            // CORREÇÃO: Garante que o valor do banco (string JSON) é transformado em Array
+            // CORREÇÃO: Usa a função robusta para ler o valor do banco
             allowed_pages: safeParsePages(user.allowed_pages), 
             warehouse_id: user.warehouse_id || ''
         });

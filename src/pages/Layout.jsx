@@ -1,3 +1,5 @@
+// Substitua o seu Layout.jsx com o código completo abaixo:
+
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPageUrl } from '@/utils';
@@ -18,14 +20,29 @@ import { base44 } from '@/api/base44Client';
 
 export default function Layout({ children, currentPageName }) {
   const [isDarkMode, setIsDarkMode] = useState(false);
-  // Por padrão, a sidebar é aberta em telas grandes e fechada em telas pequenas
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth > 1024); 
   const location = useLocation();
 
   // 1. ESTADO DE USUÁRIO - Simplificado para carregar do Local Storage
   const [userData, setUserData] = useState(null);
   
-  // Inicializa o tema e ajusta a sidebar no resize
+  // --- FUNÇÃO DE LOGOUT CORRIGIDA ---
+  const handleLogout = () => {
+    // 1. Limpa o localStorage do cliente
+    localStorage.removeItem('app_user_id');
+    localStorage.removeItem('demo_role');
+    localStorage.removeItem('demo_username');
+    localStorage.removeItem('user_permissions');
+    localStorage.removeItem('app_user_email');
+    
+    // 2. Chama a função de logout do servidor (se houver sessão lá)
+    base44.auth.logout(); 
+
+    // 3. Redireciona para a página de login
+    window.location.href = createPageUrl('Home'); 
+  };
+  
+  // Initialize theme and handle resize
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark') {
@@ -54,9 +71,8 @@ export default function Layout({ children, currentPageName }) {
     }
   };
 
-  // --- CORREÇÃO PRINCIPAL: LER APENAS DO LOCAL STORAGE ---
+  // --- LER APENAS DO LOCAL STORAGE ---
   useEffect(() => {
-    // A única fonte de verdade após o login está no localStorage!
     const demoRole = localStorage.getItem('demo_role');
     const demoUsername = localStorage.getItem('demo_username');
     const userPermissionsString = localStorage.getItem('user_permissions');
@@ -65,7 +81,6 @@ export default function Layout({ children, currentPageName }) {
     if (demoRole) {
         let permissions = [];
         try {
-            // Lê as permissões salvas pelo Home.jsx
             permissions = JSON.parse(userPermissionsString || '[]'); 
         } catch (e) {
             permissions = [];
@@ -76,20 +91,18 @@ export default function Layout({ children, currentPageName }) {
             full_name: demoUsername || 'Usuário',
             email: userEmail,
             initials: (demoUsername?.substring(0, 2) || 'US').toUpperCase(),
-            allowed_pages: permissions // Usa o array de permissões lido
+            allowed_pages: permissions
         });
     } else {
-        // Redefine para o estado de "deslogado"
         setUserData(null);
     }
   }, [location.pathname]);
-  // --- FIM DA CORREÇÃO PRINCIPAL ---
+  // --- FIM DA LÓGICA DE USUÁRIO ---
 
   if (currentPageName === 'Home') {
     return <main className="min-h-screen bg-white">{children}</main>;
   }
   
-  // Se estiver carregando, mostra o loading ou esconde o conteúdo
   if (!userData) {
       return null;
   }
@@ -104,13 +117,10 @@ export default function Layout({ children, currentPageName }) {
   ];
 
   const menuItems = allMenuItems.filter(item => {
-    // Usa o array de permissões lido do localStorage
     const userPermissions = userData.allowed_pages || [];
 
-    // Se for admin, mostra tudo (fallback de segurança)
     if (userData.app_role === 'admin') return true;
 
-    // O ÚNICO critério para não-admin deve ser o array allowed_pages
     return userPermissions.includes(item.id);
   });
 
@@ -172,7 +182,7 @@ export default function Layout({ children, currentPageName }) {
                 </div>
              </div>
             <button 
-              onClick={() => base44.auth.logout()}
+              onClick={handleLogout} // AGORA CHAMA A FUNÇÃO LOCAL
               className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-white rounded-lg transition-colors"
             >
               <LogOut className="w-4 h-4" />

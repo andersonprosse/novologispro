@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-import { createPageUrl } from '@/utils';
+// Removido import createPageUrl pois vamos usar rota direta
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -8,10 +8,14 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Truck, User, Lock } from 'lucide-react';
 import { toast } from "sonner";
+import { useNavigate } from 'react-router-dom'; // <--- IMPORTANTE: Importar isto
 
 export default function HomePage() {
   const [credentials, setCredentials] = useState({ username: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
+  
+  // Hook de navegação do React Router (O segredo para não dar 404)
+  const navigate = useNavigate();
 
   const handleLogin = (e) => {
     e.preventDefault();
@@ -21,7 +25,7 @@ export default function HomePage() {
       try {
         const { username, password } = credentials;
 
-        // 1. Usuários Demo (Hardcoded - Legado)
+        // 1. Usuários Demo (Hardcoded)
         let demoRole = null;
         if (password === '1234') {
            if (username === 'admin') demoRole = 'admin';
@@ -33,35 +37,37 @@ export default function HomePage() {
           localStorage.setItem('demo_role', demoRole);
           localStorage.setItem('demo_username', username);
           localStorage.setItem('app_user_id', 'demo-user');
-          // Admins demo veem tudo
+          // Admin demo vê tudo
           localStorage.setItem('user_permissions', JSON.stringify(['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']));
           
           toast.success(`Bem-vindo, ${username.toUpperCase()}!`);
-          window.location.href = '/Dashboard';
+          
+          // --- CORREÇÃO AQUI ---
+          // Em vez de window.location.href (que recarrega a página e dá erro 404),
+          // usamos navigate para trocar de tela instantaneamente.
+          navigate('/Dashboard'); 
+          // ---------------------
           return;
         }
 
-        // 2. Busca no Banco de Dados (AppUser)
-        // CORREÇÃO: Usando .findMany()
+        // 2. Busca no Banco de Dados
         const users = await base44.entities.AppUser.findMany();
-        
-        // Garante que é array antes de buscar
         const safeUsers = Array.isArray(users) ? users : [];
         const user = safeUsers.find(u => u.username === username && u.password === password);
 
         if (user) {
-          // --- SALVANDO DADOS DA SESSÃO ---
           localStorage.setItem('demo_role', user.app_role);
           localStorage.setItem('demo_username', user.username);
-          localStorage.setItem('app_user_id', user.id); // Essencial para não quebrar as outras telas
+          localStorage.setItem('app_user_id', user.id);
           
-          // O PULO DO GATO: Salvando as permissões configuradas no AdminUsers
           const permissions = user.allowed_pages || [];
           localStorage.setItem('user_permissions', JSON.stringify(permissions));
-          // -------------------------------
 
           toast.success(`Bem-vindo, ${user.full_name}!`);
-          window.location.href = '/Dashboard';
+          
+          // --- CORREÇÃO AQUI TAMBÉM ---
+          navigate('/Dashboard'); 
+          // ----------------------------
         } else {
           toast.error("Usuário ou senha incorretos");
           setIsLoading(false);
@@ -160,7 +166,6 @@ export default function HomePage() {
         <p className="text-emerald-100/80 mt-8 text-sm relative z-10">© 2024 Logispro Sistemas.</p>
       </div>
 
-      {/* Lado Direito - Imagem */}
       <div className="hidden lg:block w-[55%] bg-gray-50 relative overflow-hidden">
          <div className="absolute top-0 bottom-0 left-0 w-32 bg-emerald-600 rounded-r-[100%] transform -translate-x-1/2 z-10"></div>
          <div className="h-full w-full flex items-center justify-center relative z-0">

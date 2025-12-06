@@ -78,7 +78,7 @@ export default function OrdersPage() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
-  // --- CRIAÇÃO (CORRIGIDA) ---
+  // --- CRIAÇÃO ---
   const createMutation = useMutation({
     mutationFn: (data) => {
       return base44.entities.Order.create({
@@ -91,8 +91,7 @@ export default function OrdersPage() {
         lng: data.lng,
         order_number: data.order_number,
         
-        // !!! AQUI ESTAVA O PROBLEMA !!!
-        // Mudamos para pegar direto do localStorage, garantindo que o ID sempre vá para o banco
+        // Pega direto do localStorage para garantir
         app_user_id: localStorage.getItem('app_user_id'),
         app_user_email: localStorage.getItem('app_user_email'),
         
@@ -298,7 +297,12 @@ export default function OrdersPage() {
                       {recentOrders.map((order) => (
                         <TableRow key={order.id}>
                           <TableCell className="font-mono text-xs">{order.order_number}</TableCell>
-                          <TableCell className="text-xs max-w-[150px] truncate">{order.address}</TableCell>
+                          
+                          {/* CORREÇÃO AQUI: Mostra Nome do Galpão se o endereço bater */}
+                          <TableCell className="text-xs max-w-[150px] truncate">
+                              {safeWarehouses.find(w => w.address === order.address)?.name || order.address}
+                          </TableCell>
+
                           <TableCell>
                             <Badge variant={order.status === 'pending' ? 'secondary' : 'default'} className="text-[10px]">
                               {order.status}
@@ -348,9 +352,12 @@ export default function OrdersPage() {
                         <TableCell className="text-xs">
                            {safeWarehouses.find(w => w.id === order.warehouse_id)?.name || 'N/A'}
                         </TableCell>
+                        
+                        {/* CORREÇÃO AQUI: Mostra Nome do Galpão se o endereço bater */}
                         <TableCell className="text-xs max-w-[200px] truncate" title={order.address}>
-                           {order.address}
+                           {safeWarehouses.find(w => w.address === order.address)?.name || order.address}
                         </TableCell>
+
                         <TableCell>
                           <Badge variant="outline" className="text-[10px]">
                             {order.status}

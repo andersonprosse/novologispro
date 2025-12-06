@@ -1,11 +1,11 @@
 // ============================================================================
-// ARQUIVO: src/api/base44Client.js (VERSÃO DE DEBUG)
+// ARQUIVO: src/api/base44Client.js (COM LOGIN REAL)
 // ============================================================================
 
 // 1. ENDEREÇO DA API
 export const API_BASE_URL = "https://logispro.sti-ia.org/api";
 
-// 2. FUNÇÃO DE CONEXÃO
+// 2. FUNÇÃO DE CONEXÃO (Mantida igual)
 export async function request(endpoint, options = {}) {
     const url = `${API_BASE_URL}/${endpoint}`;
     
@@ -20,7 +20,6 @@ export async function request(endpoint, options = {}) {
     try {
         const response = await fetch(url, defaultOptions);
         
-        // DEBUG: Mostra o status da resposta (200 é OK, 404 é não encontrado, 500 é erro)
         console.log(`[DEBUG] Status da resposta para ${endpoint}:`, response.status);
 
         if (!response.ok) {
@@ -28,24 +27,20 @@ export async function request(endpoint, options = {}) {
         }
         
         const text = await response.text();
-        
-        // DEBUG: Mostra exatamente o que o PHP devolveu (Se for HTML, tem erro na URL)
-        console.log(`[DEBUG] Conteúdo recebido de ${endpoint}:`, text);
+        // console.log(`[DEBUG] Conteúdo recebido de ${endpoint}:`, text); // Descomente se precisar debugar muito
 
         return text ? JSON.parse(text) : [];
         
     } catch (error) {
         console.error(`[ERRO CRÍTICO] Falha na requisição para ${endpoint}:`, error);
-        return []; // Retorna array vazio para não travar a tela
+        return []; 
     }
 }
 
-// 3. HANDLER DE ENTIDADES
+// 3. HANDLER DE ENTIDADES (Mantido igual)
 const createEntityHandler = (phpFile) => ({
     findMany: async () => {
         const data = await request(phpFile);
-        // DEBUG: Verifica se o dado final é um array
-        console.log(`[DEBUG] Dados processados para ${phpFile}:`, Array.isArray(data) ? "É Array (OK)" : "NÃO É Array (ERRO)");
         return Array.isArray(data) ? data : [];
     },
     findUnique: async ({ where }) => {
@@ -63,9 +58,34 @@ const createEntityHandler = (phpFile) => ({
     }
 });
 
-// 4. O OBJETO BASE44 COMPLETO
+// 4. O OBJETO BASE44 COMPLETO (Aqui está a mudança!)
 export const base44 = {
+    // --- ÁREA DE AUTENTICAÇÃO ATUALIZADA ---
     auth: {
+        // Nova função que conecta no seu login.php
+        login: async (email, password) => {
+            try {
+                // Usa a URL base + login.php
+                const response = await fetch(`${API_BASE_URL}/login.php`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    // Repassa o erro que veio do PHP (ex: "Senha incorreta")
+                    throw new Error(data.message || 'Erro ao fazer login');
+                }
+
+                return data.user; // Sucesso! Retorna os dados do usuário
+            } catch (error) {
+                throw error;
+            }
+        },
+
+        // Mantidos por compatibilidade (caso algum componente antigo use)
         me: async () => ({ 
             id: 'admin', 
             name: "Admin LogisPro", 
@@ -74,6 +94,8 @@ export const base44 = {
         }),
         signOut: () => console.log("Sair")
     },
+
+    // --- ENTIDADES (Mantidas) ---
     entities: {
         Vehicle:     createEntityHandler('vehicles.php'),
         VehicleType: createEntityHandler('vehicle_types.php'),
@@ -81,6 +103,7 @@ export const base44 = {
         Order:       createEntityHandler('orders.php'),
         Warehouse:   createEntityHandler('warehouses.php')
     },
+    
     integrations: {
         Core: {
             UploadFile: async () => ({ file_url: "https://placehold.co/600x400" })

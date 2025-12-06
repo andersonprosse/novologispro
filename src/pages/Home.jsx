@@ -1,20 +1,19 @@
 import React, { useState } from 'react';
 import { base44 } from '@/api/base44Client';
-// Removido import createPageUrl pois vamos usar rota direta
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Truck, User, Lock } from 'lucide-react';
+import { Truck, User, Lock, Mail } from 'lucide-react';
 import { toast } from "sonner";
-import { useNavigate } from 'react-router-dom'; // <--- IMPORTANTE: Importar isto
+import { useNavigate } from 'react-router-dom';
 
 export default function HomePage() {
-  const [credentials, setCredentials] = useState({ username: '', password: '' });
+  // Alterado para 'email' para ficar mais claro que aceita e-mail
+  const [credentials, setCredentials] = useState({ email: '', password: '' });
   const [isLoading, setIsLoading] = useState(false);
   
-  // Hook de navegação do React Router (O segredo para não dar 404)
   const navigate = useNavigate();
 
   const handleLogin = (e) => {
@@ -23,58 +22,59 @@ export default function HomePage() {
 
     const performLogin = async () => {
       try {
-        const { username, password } = credentials;
+        const { email, password } = credentials;
 
-        // 1. Usuários Demo (Hardcoded)
-        let demoRole = null;
-        if (password === '1234') {
-           if (username === 'admin') demoRole = 'admin';
-           if (username === 'lider') demoRole = 'warehouse_leader';
-           if (username === 'motorista') demoRole = 'driver';
+        // 1. Lógica Demo (Admin Hardcoded) - Mantida para facilitar testes
+        if (password === '1234' && (email === 'admin' || email.includes('admin'))) {
+            localStorage.setItem('demo_role', 'admin');
+            localStorage.setItem('demo_username', 'Admin Demo');
+            localStorage.setItem('app_user_id', 'demo-user');
+            localStorage.setItem('user_permissions', JSON.stringify(['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']));
+            
+            toast.success(`Bem-vindo, Admin! (Modo Demo)`);
+            navigate('/Dashboard');
+            return;
         }
 
-        if (demoRole) {
-          localStorage.setItem('demo_role', demoRole);
-          localStorage.setItem('demo_username', username);
-          localStorage.setItem('app_user_id', 'demo-user');
-          // Admin demo vê tudo
-          localStorage.setItem('user_permissions', JSON.stringify(['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']));
-          
-          toast.success(`Bem-vindo, ${username.toUpperCase()}!`);
-          
-          // --- CORREÇÃO AQUI ---
-          // Em vez de window.location.href (que recarrega a página e dá erro 404),
-          // usamos navigate para trocar de tela instantaneamente.
-          navigate('/Dashboard'); 
-          // ---------------------
-          return;
-        }
-
-        // 2. Busca no Banco de Dados
-        const users = await base44.entities.AppUser.findMany();
-        const safeUsers = Array.isArray(users) ? users : [];
-        const user = safeUsers.find(u => u.username === username && u.password === password);
+        // ============================================================
+        // 2. Lógica SEGURA (Backend Auth via login.php)
+        // ============================================================
+        
+        // Chama a nova função base44.auth.login que criamos no base44Client
+        const user = await base44.auth.login(email, password);
 
         if (user) {
+          // Se chegou aqui, o PHP confirmou que a senha está correta
           localStorage.setItem('demo_role', user.app_role);
-          localStorage.setItem('demo_username', user.username);
+          localStorage.setItem('demo_username', user.full_name);
           localStorage.setItem('app_user_id', user.id);
           
-          const permissions = user.allowed_pages || [];
+          // Trata as permissões que vêm do banco (JSON String -> Array)
+          let permissions = [];
+          try {
+             // Se vier null ou vazio, usa array vazio
+             permissions = JSON.parse(user.allowed_pages || '[]');
+          } catch(e) { 
+             permissions = []; 
+          }
+
+          // Se o usuário não tiver permissões salvas, define um padrão
+          if (!permissions || permissions.length === 0) {
+             permissions = user.app_role === 'admin' 
+                ? ['Dashboard', 'Vehicles', 'Warehouses', 'Orders', 'Driver', 'AdminUsers']
+                : ['Dashboard', 'Orders']; // Padrão seguro para outros
+          }
+          
           localStorage.setItem('user_permissions', JSON.stringify(permissions));
 
           toast.success(`Bem-vindo, ${user.full_name}!`);
-          
-          // --- CORREÇÃO AQUI TAMBÉM ---
-          navigate('/Dashboard'); 
-          // ----------------------------
-        } else {
-          toast.error("Usuário ou senha incorretos");
-          setIsLoading(false);
+          navigate('/Dashboard');
         }
+
       } catch (error) {
         console.error("Login error:", error);
-        toast.error("Erro ao realizar login");
+        // Exibe a mensagem de erro exata que veio do PHP (ex: "Senha incorreta")
+        toast.error(error.message || "Erro ao realizar login");
         setIsLoading(false);
       }
     };
@@ -84,7 +84,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen w-full flex flex-col lg:flex-row overflow-hidden bg-white">
-      {/* Lado Esquerdo - Verde (Login Form) */}
+      {/* Lado Esquerdo - Verde */}
       <div className="w-full lg:w-[45%] bg-emerald-600 relative flex flex-col justify-center items-center p-8 lg:p-12">
         <div className="absolute top-[-10%] left-[-10%] w-64 h-64 rounded-full border-[40px] border-white/10"></div>
         <div className="absolute bottom-[-5%] right-[-5%] w-96 h-96 rounded-full border-[60px] border-white/10"></div>
@@ -95,19 +95,19 @@ export default function HomePage() {
                 <Truck className="w-8 h-8" />
              </div>
              <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">LOGISPRO</h1>
-             <p className="text-emerald-600 font-bold text-sm uppercase tracking-wider">Soluções em Frota</p>
+             <p className="text-emerald-600 font-bold text-sm uppercase tracking-wider">Acesso Seguro</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <Label className="text-gray-500 text-xs uppercase font-bold">Usuário</Label>
+              <Label className="text-gray-500 text-xs uppercase font-bold">E-mail ou Usuário</Label>
               <div className="relative">
-                <User className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                 <Input 
                   className="pl-10 border-gray-200 bg-gray-50 focus:bg-white transition-all h-12 rounded-xl" 
-                  placeholder="Digite seu usuário" 
-                  value={credentials.username}
-                  onChange={(e) => setCredentials({...credentials, username: e.target.value})}
+                  placeholder="Digite seu e-mail" 
+                  value={credentials.email}
+                  onChange={(e) => setCredentials({...credentials, email: e.target.value})}
                 />
               </div>
             </div>
@@ -131,7 +131,7 @@ export default function HomePage() {
                 <Checkbox id="keep-connected" />
                 <label htmlFor="keep-connected" className="text-gray-500 font-medium cursor-pointer">Manter conectado</label>
               </div>
-              <a href="#" className="text-emerald-600 font-bold hover:underline">Recuperar Senha</a>
+              <a href="#" className="text-emerald-600 font-bold hover:underline">Esqueci a senha</a>
             </div>
 
             <Button 
@@ -139,23 +139,23 @@ export default function HomePage() {
               className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-emerald-600/30 transition-all hover:scale-[1.02]"
               disabled={isLoading}
             >
-              {isLoading ? 'Acessando...' : 'ENTRAR'}
+              {isLoading ? 'Verificando...' : 'ENTRAR'}
             </Button>
           </form>
           
           <div className="mt-6 text-center">
-             <p className="text-gray-500 text-sm">Não tem conta?</p>
+             <p className="text-gray-500 text-sm">Problemas de acesso?</p>
              <Dialog>
                 <DialogTrigger asChild>
-                  <button className="text-emerald-600 font-bold hover:underline mt-1">Cadastrar Usuário</button>
+                  <button className="text-emerald-600 font-bold hover:underline mt-1">Falar com Suporte</button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
-                    <DialogTitle>Novo Cadastro</DialogTitle>
+                    <DialogTitle>Suporte Técnico</DialogTitle>
                   </DialogHeader>
                   <div className="py-4 text-center space-y-4">
                     <div className="bg-emerald-50 p-4 rounded-lg">
-                       <p className="text-emerald-800">Para cadastrar um novo usuário, entre em contato com o administrador do sistema.</p>
+                       <p className="text-emerald-800">Contate o administrador para resetar sua senha.</p>
                     </div>
                   </div>
                 </DialogContent>
@@ -163,7 +163,7 @@ export default function HomePage() {
           </div>
         </div>
         
-        <p className="text-emerald-100/80 mt-8 text-sm relative z-10">© 2024 Logispro Sistemas.</p>
+        <p className="text-emerald-100/80 mt-8 text-sm relative z-10">© 2025 Logispro Sistemas.</p>
       </div>
 
       <div className="hidden lg:block w-[55%] bg-gray-50 relative overflow-hidden">

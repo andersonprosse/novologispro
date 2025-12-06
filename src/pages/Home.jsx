@@ -10,8 +10,8 @@ import { toast } from "sonner";
 import { useNavigate } from 'react-router-dom';
 
 export default function HomePage() {
-  // Alterado para 'email' para ficar mais claro que aceita e-mail
-  const [credentials, setCredentials] = useState({ email: '', password: '' });
+  // O estado é o correto: 'email'
+  const [credentials, setCredentials] = useState({ email: '', password: '' }); 
   const [isLoading, setIsLoading] = useState(false);
   
   const navigate = useNavigate();
@@ -22,7 +22,8 @@ export default function HomePage() {
 
     const performLogin = async () => {
       try {
-        const { email, password } = credentials;
+        // CORREÇÃO AQUI: Destruturação correta
+        const { email, password } = credentials; 
 
         // 1. Lógica Demo (Admin Hardcoded) - Mantida para facilitar testes
         if (password === '1234' && (email === 'admin' || email.includes('admin'))) {
@@ -40,7 +41,7 @@ export default function HomePage() {
         // 2. Lógica SEGURA (Backend Auth via login.php)
         // ============================================================
         
-        // Chama a nova função base44.auth.login que criamos no base44Client
+        // Chama a nova função base44.auth.login com o 'email' e 'password' corretos
         const user = await base44.auth.login(email, password);
 
         if (user) {
@@ -52,7 +53,6 @@ export default function HomePage() {
           // Trata as permissões que vêm do banco (JSON String -> Array)
           let permissions = [];
           try {
-             // Se vier null ou vazio, usa array vazio
              permissions = JSON.parse(user.allowed_pages || '[]');
           } catch(e) { 
              permissions = []; 
@@ -100,13 +100,14 @@ export default function HomePage() {
 
           <form onSubmit={handleLogin} className="space-y-6">
             <div className="space-y-2">
-              <Label className="text-gray-500 text-xs uppercase font-bold">E-mail ou Usuário</Label>
+              <Label className="text-gray-500 text-xs uppercase font-bold">E-mail</Label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
                 <Input 
                   className="pl-10 border-gray-200 bg-gray-50 focus:bg-white transition-all h-12 rounded-xl" 
-                  placeholder="Digite seu e-mail" 
+                  placeholder="Digite seu e-mail de acesso" 
                   value={credentials.email}
+                  // Input está corretamente vinculado ao 'email'
                   onChange={(e) => setCredentials({...credentials, email: e.target.value})}
                 />
               </div>
